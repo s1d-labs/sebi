@@ -1,0 +1,10 @@
+{
+  "family": "sebi",
+  "about": "SEBI (www.sebi.gov.in) enforcement and entity listings: orders (AO, WTM, Settlement, SAT, Court), recovery and defaulters, and caution notices. One record per order/entry; the order PDF goes to the family bucket.",
+  "setup": [
+    "pip install -r requirements.txt"
+  ],
+  "tasks": {
+    "crawl": ["python", "crawl.py"]
+  }
+}

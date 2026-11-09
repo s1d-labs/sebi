@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.scrape-check/
+.pytest_cache/
+out/
+pdf/
+*.pdf
