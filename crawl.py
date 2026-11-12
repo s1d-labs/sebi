@@ -16,7 +16,6 @@ The entity names (company and individual) are in the order title: the downstream
 import gzip
 import hashlib
 import html as htmllib
-import json
 import os
 import re
 import sys
@@ -24,6 +23,7 @@ import time
 import urllib.parse
 
 import requests
+from scrape_hub_client import HubClient, LocalHub, count_request
 
 PROJECT = os.environ.get("SCRAPE_POOL_PROJECT", "")
 SID = os.environ.get("SID", "2")
@@ -125,33 +125,6 @@ def listing_body(page, ssid, smid, do_direct):
 
 # ---- hub-driven run ---------------------------------------------------------------------------------------------
 
-class LocalHub:
-    """Stand-in for HubClient so `--local` runs without the hub: counters to stderr, records to stdout, no uploads."""
-    settings = {"threads": 1, "delay_ms": 0, "paused": False}
-
-    def __init__(self):
-        self.counts = {}
-
-    def metric(self, name, value=1):
-        self.counts[name] = self.counts.get(name, 0) + value
-
-    def error(self, n=1):
-        self.metric("errors", n)
-
-    def block(self, n=1):
-        self.metric("blocked", n)
-
-    def record(self, rid, data):
-        print(json.dumps({"record_id": rid, "data": data}, ensure_ascii=False))
-
-    def upload_many(self, files):
-        self.metric("would_upload", len(files))
-        return []
-
-    def failure(self, *a, **k):
-        self.metric("failures")
-
-
 def get(hub, session, url, method="GET", data=None):
     """One polite request. Reports the counters the hub throttles on. Returns the text body, or None on any failure."""
     t = time.time()
@@ -163,15 +136,10 @@ def get(hub, session, url, method="GET", data=None):
         else:
             r = session.get(url, timeout=45, headers=headers)
     except requests.RequestException:
-        hub.metric("http_error")
-        hub.error()
+        count_request(hub, None)                # http_error + hub.error()
         return None
-    hub.metric("n_http")
-    hub.metric("t_http_s", time.time() - t)
+    count_request(hub, r.status_code, time.time() - t)   # n_http, t_http_s, http_<code>; 403/429/503 -> hub.block()
     if r.status_code != 200:
-        hub.metric(f"http_{r.status_code}")
-        if r.status_code in (403, 429, 503):
-            hub.block()
         return None
     if method == "POST":
         return r.text                           # the AJAX endpoint is UTF-8 text, not a document with a charset
@@ -201,14 +169,13 @@ def fetch_pdf(hub, session, rid, detail_url, record):
     try:
         r = session.get(pdf_url, timeout=90, headers={"User-Agent": UA})
     except requests.RequestException:
-        hub.metric("http_error"); hub.error()
+        count_request(hub, None)
         hub.failure("pdf", rid, "pdf request failed", url=pdf_url)
         return
-    hub.metric("n_http"); hub.metric("t_http_s", time.time() - t)
+    count_request(hub, r.status_code, time.time() - t)
     if r.status_code != 200 or not r.content:
-        hub.metric(f"http_{r.status_code}")
-        if r.status_code in (403, 429, 503):
-            hub.block()
+        if r.status_code == 200:
+            hub.metric("http_200")                  # an empty 200 body is counted as before
         hub.failure("pdf", rid, f"pdf status {r.status_code}", url=pdf_url)
         return
     path = f"pdf/{rid}.pdf"
@@ -246,13 +213,12 @@ def handle_page(hub, session, item):
 def local(project, page=0):
     global PROJECT
     PROJECT = PROJECT or project
-    hub = LocalHub()
+    hub = LocalHub()     # counters in hub.counts, records to stdout, uploads only listed
     n = handle_page(hub, requests.Session(), {"key": f"{project}-p{page}", "payload": {"page": page}})
     print(f"{n} records, counters {hub.counts}", file=sys.stderr)
 
 
 def main():
-    from scrape_hub_client import HubClient      # imported here so --local works without the SDK
     hub = HubClient(PROJECT, job_index=int(os.environ.get("SCRAPE_JOB_INDEX", "0")),
                     total_jobs=int(os.environ.get("SCRAPE_TOTAL_JOBS", "1")))
     session = requests.Session()
