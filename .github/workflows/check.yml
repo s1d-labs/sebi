@@ -16,8 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: |
@@ -29,7 +29,7 @@ jobs:
         # A small category (27 entries, 2 pages) with FETCH_PDF=0 keeps the check fast and polite to SEBI.
         # Change --project to any category in family.py to check the full detail+PDF path by hand.
         run: scrape-check --items 2 --project sebi-orders-settlement-court --env FETCH_PDF=0
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: ${{ always() }}
         with:
           name: scrape-check
